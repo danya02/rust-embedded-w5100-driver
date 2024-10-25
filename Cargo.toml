@@ -1,0 +1,23 @@
+[package]
+name = "rust-embedded-w5100-driver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cortex-m = "0.7.2"
+cortex-m-rt = "0.7"
+cortex-m-rtic = "1.1.4"
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
+embedded-hal-bus = "0.2.0"
+embedded-hal-nb = "1.0.0"
+rp-pico = "0.9.0"
+rp2040-boot2 = "0.3.0"
+rp2040-hal = "0.10.2"
+
+# We aren't using this, but embedded-hal-bus 0.2 unconditionally requires atomics.
+# Should be fixed in e-h-b 0.3 via https://github.com/rust-embedded/embedded-hal/pull/607
+portable-atomic = {version = "1.7.0", features = ["critical-section"]}
+fugit = "0.3.7"
+embedded-io = "0.6.1"
+rtt-target = "0.5.0"
