@@ -236,6 +236,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
+name = "const-sha1"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d8a42181e0652c2997ae4d217f25b63c5337a52fd2279736e97b832fa0a3cff"
+
+[[package]]
 name = "cortex-m"
 version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -362,6 +368,12 @@ dependencies = [
  "quote",
  "syn 2.0.85",
 ]
+
+[[package]]
+name = "data-encoding"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "debug-helper"
@@ -668,16 +680,18 @@ dependencies = [
  "embedded-storage",
  "fixed",
  "fixed-macro",
+ "futures-util",
  "heapless 0.8.0",
  "log",
  "panic-probe",
+ "picoserve",
  "pio",
  "pio-proc",
  "portable-atomic",
  "rand",
  "reqwless",
  "serde",
- "serde-json-core",
+ "serde-json-core 0.5.1",
  "smart-leds",
  "st7789",
  "static_cell",
@@ -1135,6 +1149,7 @@ checksum = "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad"
 dependencies = [
  "defmt",
  "hash32 0.3.1",
+ "serde",
  "stable_deref_trait",
 ]
 
@@ -1249,6 +1264,12 @@ checksum = "d3c48237b9604c5a4702de6b824e02006c3214327564636aef27c1028a8fa0ed"
 dependencies = [
  "regex",
 ]
+
+[[package]]
+name = "lhash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "744a4c881f502e98c2241d2e5f50040ac73b30194d64452bb6260393b53f0dc9"
 
 [[package]]
 name = "libc"
@@ -1437,6 +1458,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6796ad771acdc0123d2a88dc428b5e38ef24456743ddb1744ed628f9815c096"
 dependencies = [
  "siphasher",
+]
+
+[[package]]
+name = "picoserve"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "289ba0d65f123eb9c55ee8e34c0227f3c17b4298bb47ef05cbd0caa0e6a06d49"
+dependencies = [
+ "const-sha1",
+ "data-encoding",
+ "embedded-io-async",
+ "futures-util",
+ "heapless 0.8.0",
+ "lhash",
+ "ryu",
+ "serde",
+ "serde-json-core 0.6.0",
 ]
 
 [[package]]
@@ -1792,6 +1830,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c9e1ab533c0bc414c34920ec7e5f097101d126ed5eac1a1aac711222e0bbb33"
 dependencies = [
  "heapless 0.7.17",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "serde-json-core"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b81787e655bd59cecadc91f7b6b8651330b2be6c33246039a65e5cd6f4e0828"
+dependencies = [
+ "heapless 0.8.0",
  "ryu",
  "serde",
 ]

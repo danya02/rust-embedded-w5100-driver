@@ -2,7 +2,7 @@
 //! Send it some data, you should see it echoed back and printed in the console.
 //!
 //! Example written for the [`WIZnet W5500-EVB-Pico`](https://www.wiznet.io/product-item/w5500-evb-pico/) board.
-
+#![feature(type_alias_impl_trait)]
 #![no_std]
 #![no_main]
 
@@ -20,9 +20,11 @@ use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
 use embassy_rp::watchdog::Watchdog;
 use embassy_time::{Delay, Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use embedded_io_async::Write;
 use heapless::String;
 use panic_probe as _;
+use picoserve::io::ReadExt;
+use picoserve::routing::get;
+use picoserve::Timeouts;
 use rand::RngCore;
 use static_cell::StaticCell;
 
@@ -142,42 +144,7 @@ async fn main(spawner: Spawner) {
     let local_addr = cfg.address.address();
     info!("IP address: {:?}", local_addr);
 
-    let mut rx_buffer = [0; 4096];
-    let mut tx_buffer = [0; 4096];
-    let mut buf = [0; 4096];
-    loop {
-        let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.set_timeout(Some(Duration::from_secs(10)));
-
-        led.set_low();
-        info!("Listening on TCP:1234...");
-        if let Err(e) = socket.accept(1234).await {
-            warn!("accept error: {:?}", e);
-            continue;
-        }
-        info!("Received connection from {:?}", socket.remote_endpoint());
-        led.set_high();
-
-        loop {
-            let n = match socket.read(&mut buf).await {
-                Ok(0) => {
-                    warn!("read EOF");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    warn!("{:?}", e);
-                    break;
-                }
-            };
-            info!("rxd {}", core::str::from_utf8(&buf[..n]).unwrap());
-
-            if let Err(e) = socket.write_all(&buf[..n]).await {
-                warn!("write error: {:?}", e);
-                break;
-            }
-        }
-    }
+    spawner.must_spawn(web_task(0, stack));
 }
 
 async fn wait_for_config(stack: Stack<'static>) -> embassy_net::StaticConfigV4 {
@@ -188,3 +155,141 @@ async fn wait_for_config(stack: Stack<'static>) -> embassy_net::StaticConfigV4 {
         yield_now().await;
     }
 }
+
+#[embassy_executor::task]
+async fn web_task(task_id: u8, stack: Stack<'static>) -> ! {
+    let port = 80;
+    let app = picoserve::Router::new().route("/", get(|| async move { "Hello World" }));
+    let config = picoserve::Config::new(picoserve::Timeouts {
+        start_read_request: Some(Duration::from_secs(5)),
+        read_request: Some(Duration::from_secs(1)),
+        write: Some(Duration::from_secs(1)),
+    });
+
+    let mut tx_buf = [0; 1024];
+    let mut rx_buf = [0; 1024];
+
+    let mut http_buf = [0; 1024];
+    loop {
+        let mut socket = embassy_net::tcp::TcpSocket::new(stack, &mut rx_buf, &mut tx_buf);
+        if let Err(err) = socket.accept(port).await {
+            warn!("{}: accept error: {:?}", task_id, err);
+            continue;
+        }
+
+        let remote_endpoint = socket.remote_endpoint();
+
+        info!(
+            "{}: Received connection from {:?}",
+            task_id, remote_endpoint
+        );
+
+        match picoserve::serve(
+            &app,
+            EmbassyTimer,
+            &config,
+            &mut http_buf,
+            EmbassyTcpSocket(socket),
+        )
+        .await
+        {
+            Ok(handled_requests_count) => {
+                info!(
+                    "{} requests handled from {:?}",
+                    handled_requests_count, remote_endpoint
+                );
+            }
+            Err(err) => error!("{}", Debug2Format(&err)),
+        }
+    }
+}
+
+pub(crate) struct EmbassyTimer;
+
+impl picoserve::Timer for EmbassyTimer {
+    type Duration = embassy_time::Duration;
+    type TimeoutError = embassy_time::TimeoutError;
+
+    async fn run_with_timeout<F: core::future::Future>(
+        &mut self,
+        duration: Self::Duration,
+        future: F,
+    ) -> Result<F::Output, Self::TimeoutError> {
+        embassy_time::with_timeout(duration, future).await
+    }
+}
+
+pub(crate) struct EmbassyTcpSocket<'s>(pub embassy_net::tcp::TcpSocket<'s>);
+
+impl<'s> picoserve::io::Socket for EmbassyTcpSocket<'s> {
+    type Error = embassy_net::tcp::Error;
+    type ReadHalf<'a> = embassy_net::tcp::TcpReader<'a> where 's: 'a;
+    type WriteHalf<'a> = embassy_net::tcp::TcpWriter<'a> where 's: 'a;
+
+    fn split(&mut self) -> (Self::ReadHalf<'_>, Self::WriteHalf<'_>) {
+        embassy_net::tcp::TcpSocket::split(&mut self.0)
+    }
+
+    async fn shutdown<Timer: picoserve::Timer>(
+        mut self,
+        timeouts: &crate::Timeouts<Timer::Duration>,
+        timer: &mut Timer,
+    ) -> Result<(), picoserve::Error<Self::Error>> {
+        self.0.close();
+
+        let (mut rx, mut tx) = self.split();
+
+        // Flush the write half until the read half has been closed by the client
+        futures_util::future::select(
+            core::pin::pin!(async {
+                timer
+                    .run_with_maybe_timeout(timeouts.read_request.clone(), rx.discard_all_data())
+                    .await
+                    .map_err(|_err| picoserve::Error::ReadTimeout)?
+                    .map_err(picoserve::Error::Read)
+            }),
+            core::pin::pin!(async {
+                tx.flush().await.map_err(picoserve::Error::Write)?;
+                core::future::pending().await
+            }),
+        )
+        .await
+        .factor_first()
+        .0?;
+
+        // Flush the write half until the socket is closed.
+        // `embassy_net::tcp::TcpSocket` (possibly erroniously) keeps trying to flush until the tx buffer is empty,
+        // but we don't care at this point if data is lost
+        timer
+            .run_with_maybe_timeout(
+                timeouts.write.clone(),
+                core::future::poll_fn(|cx| {
+                    use core::future::Future;
+
+                    if self.0.state() == embassy_net::tcp::State::Closed {
+                        core::task::Poll::Ready(Ok(()))
+                    } else {
+                        core::pin::pin!(self.0.flush()).poll(cx)
+                    }
+                }),
+            )
+            .await
+            .map_err(|_err| picoserve::Error::WriteTimeout)?
+            .map_err(picoserve::Error::Write)
+    }
+}
+pub(crate) trait TimerExt: picoserve::Timer {
+    async fn run_with_maybe_timeout<F: core::future::Future>(
+        &mut self,
+        duration: Option<Self::Duration>,
+        future: F,
+    ) -> Result<F::Output, Self::TimeoutError> {
+        if let Some(duration) = duration {
+            self.run_with_timeout(duration, future).await
+        } else {
+            Ok(future.await)
+        }
+    }
+}
+
+impl<T: picoserve::Timer> TimerExt for T {}
