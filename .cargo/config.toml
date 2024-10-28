@@ -18,16 +18,16 @@ target = "thumbv6m-none-eabi"
 # Pass some extra options to rustc, some of which get passed on to the linker.
 #
 # * linker argument --nmagic turns off page alignment of sections (which saves
-#   flash space)
+#   flash space) (not applicable, build.rs does it already)
 # * linker argument -Tlink.x tells the linker to use link.x as the linker
 #   script. This is usually provided by the cortex-m-rt crate, and by default
 #   the version in that crate will include a file called `memory.x` which
-#   describes the particular memory layout for your specific chip. 
+#   describes the particular memory layout for your specific chip. (not applicable, build.rs does it already)
 # * no-vectorize-loops turns off the loop vectorizer (seeing as the M0+ doesn't
 #   have SIMD)
 rustflags = [
-    "-C", "link-arg=--nmagic",
-    "-C", "link-arg=-Tlink.x",
+    #"-C", "link-arg=--nmagic",
+    #"-C", "link-arg=-Tlink.x",
     "-C", "no-vectorize-loops",
 ]
 
@@ -38,3 +38,6 @@ rustflags = [
 # This runner will find a supported SWD debug probe and flash your RP2040 over
 # SWD:
 runner = "probe-rs run --chip RP2040"
+
+[env]
+DEFMT_LOG = "debug"
